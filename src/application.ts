@@ -1,12 +1,4 @@
-import {
-  Action,
-  Dispatch,
-  Store,
-  AnyAction,
-  Middleware,
-  createStore,
-  applyMiddleware,
-} from "redux";
+import { Dispatch, Store, AnyAction, Middleware, createStore, applyMiddleware } from "redux";
 import {
   ApiSpec,
   Cmd,
