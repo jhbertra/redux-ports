@@ -1,4 +1,13 @@
-import { Dispatch, Store, AnyAction, Middleware, createStore, applyMiddleware } from "redux";
+import {
+  Dispatch,
+  Store,
+  AnyAction,
+  Middleware,
+  createStore,
+  applyMiddleware,
+  compose,
+  StoreEnhancer,
+} from "redux";
 import {
   ApiSpec,
   Cmd,
@@ -59,25 +68,34 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
     private readonly subscriptions: (model: model) => Sub<msg>,
     private readonly update: (model: model, msg: msg) => readonly [model, Cmd<msg>],
     apiSpec: api,
+    enhancer?: StoreEnhancer<{}, {}>,
   ) {
     const ports = {} as any;
 
-    const middleware: Middleware<{}, model> = ({ dispatch, getState }) => next => action => {
-      if (!this.initialized) {
-        throw new Error("application.run() must be called before application.store.dispatch()");
-      }
+    const appEnhancer: StoreEnhancer<{}, {}> = creator => (reducer, preLoadedState) =>
+      creator((state, action) => {
+        if (!this.initialized && !action.type.startsWith("@@")) {
+          throw new Error("application.run() must be called before application.store.dispatch()");
+        }
 
-      const [model, cmd] =
-        action.type === "@@SetModel"
-          ? [action.model, Cmd.None<msg>()]
-          : this.update(getState(), action);
+        const [model, cmd] =
+          action.type === "@@SetModel"
+            ? [(action as any).model, Cmd.None()]
+            : action.type.startsWith("@@redux")
+            ? [notStarted, Cmd.None()]
+            : (reducer(state, action) as any);
 
-      this.handleUpdate(model, cmd, next);
-    };
+        if (this.store) {
+          this.subs = this.subscriptions(model);
+          setTimeout(() => this.handleCmd(cmd, this.store.dispatch));
+        }
+
+        return model;
+      }, preLoadedState);
 
     this.store = createStore<model, msg, {}, {}>(
-      (_, action: AnyAction) => (action.type === "@@SetModel" ? action.model : notStarted),
-      applyMiddleware(middleware),
+      this.update as any,
+      enhancer ? compose(appEnhancer, enhancer) : appEnhancer,
     );
 
     for (const port in apiSpec) {
@@ -103,12 +121,7 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
   public run(flags: flags) {
     const [model, cmd] = this.init(flags);
     this.initialized = true;
-    this.handleUpdate(model, cmd, this.store.dispatch);
-  }
-
-  private handleUpdate(model: model, cmd: Cmd<msg>, dispatch: Dispatch<any>) {
-    dispatch({ type: "@@SetModel", model });
-    this.subs = this.subscriptions(model);
+    this.store.dispatch({ type: "@@SetModel", model } as any);
     this.handleCmd(cmd, this.store.dispatch);
   }
 

@@ -1,5 +1,5 @@
 import { Application, Sub, Cmd, CmdSpec, makeApi, SubSpec, notStarted } from "../src/redux-ports";
-import { AnyAction } from "redux";
+import { AnyAction, Reducer, DeepPartial } from "redux";
 
 describe("Application", () => {
   it("Contains an unique sybmol for state before run", () => {
@@ -155,7 +155,7 @@ describe("Application", () => {
     expect(application.store.getState()).toEqual(220);
   });
 
-  it("Batch cmds are processed", () => {
+  it("Batch cmds are processed", async () => {
     const apiSpec = {
       log: CmdSpec<string>(),
     };
@@ -178,8 +178,13 @@ describe("Application", () => {
 
     application.run(12);
     application.store.dispatch({ type: "msg" });
-    expect(msg).toEqual("yo");
-    expect(application.store.getState()).toEqual(13);
+    return new Promise(resolve => {
+      setTimeout(() => {
+        expect(msg).toEqual("yo");
+        expect(application.store.getState()).toEqual(13);
+        resolve();
+      });
+    });
   });
 
   it("Cmd responses are processed", () => {
@@ -209,5 +214,48 @@ describe("Application", () => {
     application.run(12);
     expect(msg).toEqual("hi");
     expect(application.store.getState()).toEqual(24);
+  });
+
+  it("Store enhancers are inserted before Application middleware", () => {
+    const actions = [] as AnyAction[];
+
+    const application = new Application<AnyAction, { n: number }, number>(
+      (n: number) => [{ n }, Cmd.None<AnyAction>()],
+      () => Sub.None<AnyAction>(),
+      (model, msg) => [
+        {
+          n:
+            msg.type === "add"
+              ? model + msg.number
+              : msg.type === "mul"
+              ? model.n * msg.number
+              : model.n,
+        },
+        Cmd.None(),
+      ],
+      {},
+      // @ts-ignore
+      storeCreator => (
+        reducer: Reducer<{ n: number }, AnyAction>,
+        preloadedState?: DeepPartial<{ n: number }>,
+      ) => {
+        const store = storeCreator((s: { n: number } = { n: 0 }, a: AnyAction) => {
+          console.log(a);
+          if (!a.type.startsWith("@@redux")) {
+            actions.push(a);
+          }
+          return reducer(s, a);
+        }, preloadedState);
+
+        return store;
+      },
+    );
+
+    application.run(12);
+    application.store.dispatch({ type: "mul", number: 2 });
+    expect(actions).toEqual([
+      { type: "@@SetModel", model: { n: 12 } },
+      { type: "mul", number: 2 },
+    ]);
   });
 });
