@@ -1,8 +1,8 @@
-import { Application, Sub, Cmd, CmdSpec, makeApi, SubSpec } from "../src/redux-ports";
+import { Application, Sub, Cmd, CmdSpec, makeApi, SubSpec, notStarted } from "../src/redux-ports";
 import { AnyAction } from "redux";
 
 describe("Application", () => {
-  it("Contains an empty object for state before run", () => {
+  it("Contains an unique sybmol for state before run", () => {
     const application = new Application(
       () => {
         throw new Error("Init not expected to be called");
@@ -15,7 +15,7 @@ describe("Application", () => {
       },
       {},
     );
-    expect(application.store.getState()).toEqual({});
+    expect(application.store.getState()).toEqual(notStarted);
   });
 
   it("Initializes state from flags", () => {

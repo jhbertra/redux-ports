@@ -50,6 +50,8 @@ type WritablePorts<spec extends ApiSpec, msg extends AnyAction> = {
     : never;
 };
 
+export const notStarted = Symbol("Unique symbol for NotStarted");
+
 export class Application<msg extends AnyAction, model, flags = {}, api extends ApiSpec = {}> {
   public get ports(): Ports<api> {
     return this.writablePorts;
@@ -82,7 +84,7 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
     };
 
     this.store = createStore<model, msg, {}, {}>(
-      (_, action: AnyAction) => (action.type === "@@SetModel" ? action.model : {}),
+      (_, action: AnyAction) => (action.type === "@@SetModel" ? action.model : notStarted),
       applyMiddleware(middleware),
     );
 
