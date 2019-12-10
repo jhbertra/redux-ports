@@ -121,13 +121,11 @@ export function makeApi<spec extends ApiSpec>(spec: spec): Api<spec> {
   const result = {} as any;
 
   for (const port in spec) {
-    if (spec.hasOwnProperty(port)) {
-      const portSpec = spec[port];
-      result[port] =
-        portSpec.type === 0
-          ? (data: any, handleResponse: any) => makeCmd(data, port, handleResponse)
-          : (handler: any) => makeSub(port as any, handler);
-    }
+    const portSpec = spec[port];
+    result[port] =
+      portSpec.type === 0
+        ? (data: any, handleResponse: any) => makeCmd(data, port, handleResponse)
+        : (handler: any) => makeSub(port as any, handler);
   }
 
   return result;
@@ -137,8 +135,12 @@ export function makeApi<spec extends ApiSpec>(spec: spec): Api<spec> {
  * API ports (implemented externally)
  */
 
-export interface CmdPort<a, b = never> {
-  subscribe(handler: (data: a, next: (response: b) => void) => void): void;
+export interface CmdPort<a, b> {
+  subscribe(
+    handler: b extends undefined
+      ? (data: a) => void
+      : (data: a, next: (response: b) => void) => void,
+  ): void;
 }
 
 export interface SubPort<a> {

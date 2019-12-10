@@ -56,6 +56,29 @@ describe("Application", () => {
     expect(msg).toEqual("hi");
   });
 
+  it("Calling next from a no response cmd throws an error", () => {
+    const apiSpec = {
+      log: CmdSpec<string>(),
+    };
+
+    const api = makeApi(apiSpec);
+
+    const application = new Application(
+      (n: number) => [n, api.log<AnyAction>("hi")],
+      () => Sub.None<AnyAction>(),
+      () => {
+        throw new Error("Update not expected to be called");
+      },
+      apiSpec,
+    );
+
+    let msg = "";
+
+    application.ports.log.subscribe(((m: any, next: any) => next(12)) as any);
+
+    expect(() => application.run(12)).toThrow(new Error("No response expected to this port."));
+  });
+
   it("Throws an error when dispatch called before run", () => {
     const application = new Application(
       (n: number) => [n, Cmd.None<AnyAction>()],
@@ -132,6 +155,7 @@ describe("Application", () => {
   it("Batch Subs are processed", () => {
     const apiSpec = {
       numberReceived: SubSpec<number>(),
+      stringReceived: SubSpec<string>(),
     };
 
     const api = makeApi(apiSpec);
@@ -142,6 +166,7 @@ describe("Application", () => {
         Sub.Batch(
           api.numberReceived(x => ({ type: "add", number: x })),
           api.numberReceived(x => ({ type: "mul", number: x })),
+          api.stringReceived(x => ({ type: x, number: 2 })),
         ),
       (model, msg) => [
         msg.type === "add" ? model + msg.number : msg.type === "mul" ? model * msg.number : model,
@@ -152,7 +177,8 @@ describe("Application", () => {
 
     application.run(12);
     application.ports.numberReceived.send(10);
-    expect(application.store.getState()).toEqual(220);
+    application.ports.stringReceived.send("mul");
+    expect(application.store.getState()).toEqual(440);
   });
 
   it("Batch cmds are processed", () => {

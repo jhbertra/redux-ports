@@ -126,20 +126,18 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
     );
 
     for (const port in apiSpec) {
-      if (apiSpec.hasOwnProperty(port)) {
-        const portSpec = apiSpec[port];
-        ports[port] =
-          portSpec.type === 0
-            ? new OutPort()
-            : new InPort(data => {
-                const subs = this.flattenSubs(this.subs);
-                for (const sub of subs) {
-                  if (sub.port === port) {
-                    this.store.dispatch(sub.handler(data));
-                  }
+      const portSpec = apiSpec[port];
+      ports[port] =
+        portSpec.type === 0
+          ? new OutPort()
+          : new InPort(data => {
+              const subs = this.flattenSubs(this.subs);
+              for (const sub of subs) {
+                if (sub.port === port) {
+                  this.store.dispatch(sub.handler(data));
                 }
-              });
-      }
+              }
+            });
     }
 
     this.writablePorts = ports;
