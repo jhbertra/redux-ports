@@ -7,6 +7,9 @@ import {
   applyMiddleware,
   compose,
   StoreEnhancer,
+  Reducer,
+  Action,
+  DeepPartial,
 } from "redux";
 import {
   ApiSpec,
@@ -61,7 +64,6 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
   private readonly writablePorts: WritablePorts<api, msg>;
   public readonly store: Store<model, msg>;
   private subs: Sub<msg> = Sub.None();
-  private initialized = false;
 
   constructor(
     private readonly init: (flags: flags) => readonly [model, Cmd<msg>],
@@ -72,26 +74,51 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
   ) {
     const ports = {} as any;
 
-    const appEnhancer: StoreEnhancer<{}, {}> = creator => (reducer, preLoadedState) =>
-      creator((state, action) => {
-        if (!this.initialized && !action.type.startsWith("@@")) {
-          throw new Error("application.run() must be called before application.store.dispatch()");
-        }
+    const appEnhancer: StoreEnhancer<{}, {}> = innerCreator => <S, A extends Action>(
+      reducer: Reducer<S, A>,
+      preloadedState?: DeepPartial<S>,
+    ) => {
+      let cmdQueue = [] as Cmd<msg>[];
 
-        const [model, cmd] =
-          action.type === "@@SetModel"
-            ? [(action as any).model, Cmd.None()]
-            : action.type.startsWith("@@redux")
-            ? [notStarted, Cmd.None()]
-            : (reducer(state, action) as any);
+      const runReducer = (r: Reducer<S, A>) => {
+        return (model: S | undefined, msg: A) => {
+          if (msg.type === "@@ReduxPortsInit") {
+            cmdQueue.push((msg as any).cmd);
+            this.subs = this.subscriptions((msg as any).model);
+            return (msg as any).model;
+          } else if (msg.type.startsWith("@@")) {
+            return model ?? notStarted;
+          } else if ((model as any) === notStarted) {
+            throw new Error("application.run() must be called before application.store.dispatch()");
+          } else {
+            const [newModel, cmd] = r(model, msg) as any;
+            cmdQueue.push(cmd);
+            this.subs = this.subscriptions(newModel);
+            return newModel;
+          }
+        };
+      };
 
-        if (this.store) {
-          this.subs = this.subscriptions(model);
-          setTimeout(() => this.handleCmd(cmd, this.store.dispatch));
-        }
+      const innerStore = innerCreator<S, A>(runReducer(reducer), preloadedState);
 
-        return model;
-      }, preLoadedState);
+      const dispatch = (action: A) => {
+        const result = innerStore.dispatch(action);
+        const cmdsToRun = cmdQueue;
+        cmdQueue = [];
+        this.handleCmd(Cmd.Batch(...cmdsToRun), dispatch as any);
+        return result;
+      };
+
+      function replaceReducer(reducer: Reducer<S, A>) {
+        return innerStore.replaceReducer(runReducer(reducer));
+      }
+
+      return {
+        ...innerStore,
+        dispatch,
+        replaceReducer,
+      } as Store<S, A>;
+    };
 
     this.store = createStore<model, msg, {}, {}>(
       this.update as any,
@@ -120,9 +147,7 @@ export class Application<msg extends AnyAction, model, flags = {}, api extends A
 
   public run(flags: flags) {
     const [model, cmd] = this.init(flags);
-    this.initialized = true;
-    this.store.dispatch({ type: "@@SetModel", model } as any);
-    this.handleCmd(cmd, this.store.dispatch);
+    this.store.dispatch({ type: "@@ReduxPortsInit", model, cmd } as any);
   }
 
   private handleCmd(cmd: Cmd<msg>, dispatch: Dispatch<msg>) {

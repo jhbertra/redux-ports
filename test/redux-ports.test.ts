@@ -155,7 +155,7 @@ describe("Application", () => {
     expect(application.store.getState()).toEqual(220);
   });
 
-  it("Batch cmds are processed", async () => {
+  it("Batch cmds are processed", () => {
     const apiSpec = {
       log: CmdSpec<string>(),
     };
@@ -178,13 +178,8 @@ describe("Application", () => {
 
     application.run(12);
     application.store.dispatch({ type: "msg" });
-    return new Promise(resolve => {
-      setTimeout(() => {
-        expect(msg).toEqual("yo");
-        expect(application.store.getState()).toEqual(13);
-        resolve();
-      });
-    });
+    expect(msg).toEqual("yo");
+    expect(application.store.getState()).toEqual(13);
   });
 
   it("Cmd responses are processed", () => {
@@ -240,8 +235,7 @@ describe("Application", () => {
         preloadedState?: DeepPartial<{ n: number }>,
       ) => {
         const store = storeCreator((s: { n: number } = { n: 0 }, a: AnyAction) => {
-          console.log(a);
-          if (!a.type.startsWith("@@redux")) {
+          if (!a.type.startsWith("@@")) {
             actions.push(a);
           }
           return reducer(s, a);
@@ -253,9 +247,44 @@ describe("Application", () => {
 
     application.run(12);
     application.store.dispatch({ type: "mul", number: 2 });
-    expect(actions).toEqual([
-      { type: "@@SetModel", model: { n: 12 } },
-      { type: "mul", number: 2 },
-    ]);
+    expect(actions).toEqual([{ type: "mul", number: 2 }]);
+  });
+
+  it("Replace reducer works", () => {
+    const apiSpec = {
+      log: CmdSpec<string, number>(),
+    };
+
+    const api = makeApi(apiSpec);
+
+    const application = new Application(
+      (n: number) => [n, Cmd.None<AnyAction>()],
+      () => Sub.None<AnyAction>(),
+      (model, msg) => [
+        msg.type === "add" ? model + msg.number : msg.type === "mul" ? model * msg.number : model,
+        Cmd.None(),
+      ],
+      apiSpec,
+    );
+
+    application.store.replaceReducer(
+      (model = 0, msg) =>
+        [
+          msg.type === "inc" ? model + 1 : msg.type === "dec" ? model - 1 : model,
+          msg.type === "msg" ? api.log<AnyAction>("hi", () => ({ type: "inc" })) : Cmd.None(),
+        ] as any,
+    );
+
+    let msg = "";
+
+    application.ports.log.subscribe((m, next) => {
+      msg = m;
+      next(2);
+    });
+
+    application.run(12);
+    application.store.dispatch({ type: "msg" });
+    expect(msg).toEqual("hi");
+    expect(application.store.getState()).toEqual(13);
   });
 });
